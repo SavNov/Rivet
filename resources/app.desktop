@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Rivet
+Comment=A Music Player for COSMIC based on GNOME Lollypop
+Type=Application
+Icon=com.github.SavNov.Rivet
+Exec=rivet %F
+Terminal=false
+StartupNotify=true
+Categories=COSMIC
+Keywords=COSMIC
+MimeType=
