@@ -6,6 +6,8 @@ use cosmic::app::{context_drawer, Core, Task};
 use cosmic::cosmic_config::{self, CosmicConfigEntry};
 //use cosmic::iced::alignment::{Horizontal, Vertical};
 use cosmic::iced::{Alignment, Subscription};
+//use cosmic::iced_wgpu::graphics::text;
+use cosmic::iced_widget::image;
 use cosmic::widget::{self, icon, menu, nav_bar};
 use cosmic::{cosmic_theme, theme, Application, ApplicationExt, Element};
 use futures_util::SinkExt;
@@ -16,17 +18,35 @@ const REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
 const APP_ICON: &[u8] = include_bytes!("../resources/icons/hicolor/scalable/apps/icon.svg");
 
 #[derive(Debug, Clone)]
+struct Song {
+    title: String,
+    artist: String,
+    album: String,
+    year: String,
+}
+impl Default for Song {
+    fn default() -> Self {
+        Self {
+            title: "".into(),
+            artist: "".into(),
+            album: "".into(),
+            year: "".into(),
+        }
+    }
+}
 struct Album {
     title: String,
     artist: String,
-    year: u16,
+    year: String,
+    songs: Vec<Song>,
 }
 impl Default for Album {
     fn default() -> Self {
         Self {
             title: "".into(),
             artist: "".into(),
-            year: 0,
+            year: "2020".into(),
+            songs: vec![],
         }
     }
 }
@@ -46,6 +66,7 @@ pub struct AppModel {
     config: Config,
 
     active_page: Page,
+    library: Vec<Song>,
 }
 
 /// Messages emitted by the application and its widgets.
@@ -58,21 +79,42 @@ pub enum Message {
     LaunchUrl(String),
 }
 
-fn load_music() {
-        let music_dir = "~/Music/";
-        let files = scan::scan_music_files(music_dir);
+fn load_music() -> Vec<Song> {
+    let music_dir = "/home/aidanw/Music/AViVA/";
+    let songs = scan::scan_music_files(music_dir);
+    let mut library: Vec<Song> = vec![Song {
+        title: "Demon Mode".into(),
+        artist: "Stiletto".into(),
+        album: "Demon Mode - Single".into(),
+        year: "2021".into(),
+    }];
 
-        for file in files {
-            if let Some((title, artist)) = scan::extract_metadata(&file) {
-                println!("Title: {}, Artist: {}", title, artist);
-            }
+    for file in songs {
+        println!("{:?}", file);
+        let Some((title, artist, album)): Option<(String, String, String)> =
+            scan::extract_metadata(&file)
+        else {
+            continue;
+        };
+        let year = "2020".into();
+        library.push(Song {
+            title,
+            artist,
+            album,
+            year,
+        });
+        // println!(
+        //     "Title: {:?}, Artist: {:?}, Album: {:?}",
+        //     title, artist, album
+        // );
 
-            if let Some(artwork) = scan::extract_artwork(&file) {
-                println!("Artwork found for: {}", file.display());
-                // Process the image (save, display, etc.)
-            }
-        }
+        // if let Some(artwork) = scan::extract_artwork(&file) {
+        //     println!("Artwork found for: {}", file.display());
+        //     // Process the image (save, display, etc.)
+        // }
     }
+    library
+}
 /// Create a COSMIC application from the app model
 impl Application for AppModel {
     /// The async executor that will be used to run your application's commands.
@@ -100,7 +142,6 @@ impl Application for AppModel {
         // Create a nav bar with three page items.
         let mut nav = nav_bar::Model::default();
 
-        load_music();
         nav.insert()
             .text("Albums")
             .data::<Page>(Page::Albums)
@@ -124,6 +165,7 @@ impl Application for AppModel {
             nav,
             key_binds: HashMap::new(),
             active_page: Page::Albums,
+            library: load_music(),
             // Optional configuration file for an application.
             config: cosmic_config::Config::new(Self::APP_ID, Config::VERSION)
                 .map(|context| match Config::get_entry(&context) {
@@ -186,13 +228,9 @@ impl Application for AppModel {
         let content = match self.active_page {
             Page::Albums => self.view_albums(),
             Page::Artists => self.view_artists(),
-            Page::Songs => self.view_songs(),
+            Page::Songs => self.view_songs(&self.library),
         };
-
-        widget::column()
-            .spacing(20)
-            .push(content)
-            .into()
+        widget::column().spacing(20).push(content).into()
     }
 
     /// Register subscriptions for this application.
@@ -333,10 +371,13 @@ impl AppModel {
         let fake_albums = vec![Album {
             title: "Demon Mode".into(),
             artist: "Stileto".into(),
-            year: 2023,
+            year: "2023".into(),
+            songs: vec![],
         }];
 
-        let mut column = widget::column().spacing(10).push(widget::text::title1("Albums"));
+        let mut column = widget::column()
+            .spacing(10)
+            .push(widget::text::title1("Albums"));
 
         for album in fake_albums.iter() {
             column = column
@@ -353,8 +394,20 @@ impl AppModel {
         widget::text("Artists page, WIP!").into()
     }
 
-    fn view_songs(&self) -> Element<Message> {
-        widget::text("Songs list, WIP!").into()
+    fn view_songs(&self, songs: &Vec<Song>) -> Element<Message> {
+        let songs = songs;
+        let mut column = widget::column()
+            .spacing(10)
+            .push(widget::text::title1("Songs"));
+
+        for song in songs.iter() {
+            column = column
+                .push(widget::text(format!("{}", song.title,)))
+                .push(widget::text(format!("{}", song.artist)))
+                .push(widget::row().spacing(10));
+            println!("{}", song.title);
+        }
+        column.into()
     }
 }
 
