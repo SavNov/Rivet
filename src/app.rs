@@ -4,14 +4,17 @@ use crate::config::Config;
 use crate::fl;
 use cosmic::app::{context_drawer, Core, Task};
 use cosmic::cosmic_config::{self, CosmicConfigEntry};
+//use image::ImageReader;
 //use cosmic::iced::alignment::{Horizontal, Vertical};
 use cosmic::iced::{Alignment, Subscription};
+use cosmic::iced_core;
 //use cosmic::iced_wgpu::graphics::text;
-use cosmic::iced_widget::image;
+use cosmic::iced_widget::image::{self, Handle};
 use cosmic::widget::{self, icon, menu, nav_bar};
 use cosmic::{cosmic_theme, theme, Application, ApplicationExt, Element};
 use futures_util::SinkExt;
 use std::collections::HashMap;
+use std::fmt::Debug;
 mod scan;
 
 const REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
@@ -50,7 +53,6 @@ impl Default for Album {
         }
     }
 }
-
 /// The application model stores app-specific state used to describe its interface and
 /// drive its logic.
 pub struct AppModel {
@@ -67,6 +69,7 @@ pub struct AppModel {
 
     active_page: Page,
     library: Vec<Song>,
+    albums: Vec<Album>,
 }
 
 /// Messages emitted by the application and its widgets.
@@ -79,41 +82,44 @@ pub enum Message {
     LaunchUrl(String),
 }
 
-fn load_music() -> Vec<Song> {
-    let music_dir = "/home/aidanw/Music/AViVA/";
+fn load_music() -> (Vec<Song>, Vec<Album>) {
+    let music_dir = "/home/aidanw/Music/";
     let songs = scan::scan_music_files(music_dir);
-    let mut library: Vec<Song> = vec![Song {
-        title: "Demon Mode".into(),
-        artist: "Stiletto".into(),
-        album: "Demon Mode - Single".into(),
-        year: "2021".into(),
-    }];
+    let mut library: Vec<Song> = Vec::new();
+    let mut albums: HashMap<String, Album> = HashMap::new();
 
     for file in songs {
-        println!("{:?}", file);
-        let Some((title, artist, album)): Option<(String, String, String)> =
-            scan::extract_metadata(&file)
-        else {
-            continue;
-        };
-        let year = "2020".into();
-        library.push(Song {
-            title,
-            artist,
-            album,
-            year,
-        });
-        // println!(
-        //     "Title: {:?}, Artist: {:?}, Album: {:?}",
-        //     title, artist, album
-        // );
+        //println!("{:?}", file);
+        if let Some((title, artist, album_name)) = scan::extract_metadata(&file) {
+            let song = Song {
+                title,
+                artist: artist.clone(),
+                album: album_name.clone(),
+                year: "2020".into(),
+            };
+            library.push(song);
 
-        // if let Some(artwork) = scan::extract_artwork(&file) {
-        //     println!("Artwork found for: {}", file.display());
-        //     // Process the image (save, display, etc.)
-        // }
+            // Create or update album
+            let album_entry = albums.entry(album_name.clone()).or_insert_with(|| Album {
+                title: album_name.clone(),
+                artist: artist.clone(),
+                year: "2020".into(),
+                songs: Vec::new(),
+            });
+            album_entry.songs.push(library.last().unwrap().clone());
+
+            // Only try to extract artwork if we haven't found it yet for this album
+            //if album_entry.artwork.is_none() {
+            //    if let Some(artwork) = scan::extract_artwork(&file) {
+            //        // Convert DynamicImage to memory buffer
+            //        let cover = ImageReader::open("`")
+            //        album_entry.artwork = Some(Handle::from_memory(buffer));
+            //    }
+            //}
+        }
     }
-    library
+
+    (library, albums.into_values().collect())
 }
 /// Create a COSMIC application from the app model
 impl Application for AppModel {
@@ -158,6 +164,9 @@ impl Application for AppModel {
             .data::<Page>(Page::Songs)
             .icon(icon::from_name("applications-games-symbolic"));
 
+        // Load music library
+        let (library, albums) = load_music();
+
         // Construct the app model with the runtime's core.
         let mut app = AppModel {
             core,
@@ -165,18 +174,12 @@ impl Application for AppModel {
             nav,
             key_binds: HashMap::new(),
             active_page: Page::Albums,
-            library: load_music(),
-            // Optional configuration file for an application.
+            library,
+            albums,
             config: cosmic_config::Config::new(Self::APP_ID, Config::VERSION)
                 .map(|context| match Config::get_entry(&context) {
                     Ok(config) => config,
-                    Err((_errors, config)) => {
-                        // for why in errors {
-                        //     tracing::error!(%why, "error loading app config");
-                        // }
-
-                        config
-                    }
+                    Err((_errors, config)) => config,
                 })
                 .unwrap_or_default(),
         };
@@ -368,26 +371,56 @@ impl AppModel {
     }
 
     fn view_albums(&self) -> Element<Message> {
-        let fake_albums = vec![Album {
-            title: "Demon Mode".into(),
-            artist: "Stileto".into(),
-            year: "2023".into(),
-            songs: vec![],
-        }];
+        let mut grid = widget::column();
 
-        let mut column = widget::column()
-            .spacing(10)
-            .push(widget::text::title1("Albums"));
+        // Create a row for every 3 albums
+        let mut current_column = widget::column().spacing(20);
+        let mut current_row = widget::row::with_capacity(3).spacing(10);
+        let mut column = 0;
+        let mut row = 0;
 
-        for album in fake_albums.iter() {
-            column = column
-                .push(widget::text(format!(
-                    "{} - {} - {}",
-                    album.title, album.artist, album.year
-                )))
-                .push(widget::row().spacing(10));
+        for album in self.albums.iter() {
+            let album_widget = widget::column().spacing(10);
+
+            // Add artwork if available, otherwise use placeholder
+            //let artwork_widget = if let artwork = &album.artwork {
+            //    widget::image(artwork.clone()).width(180).height(180)
+            //} else {
+            //    //widget::image(ImageFormat::from_name("audio-x-generic"))
+            //    //    .width(180)
+            //    //    .height(180)
+            //    continue;
+            //};
+
+            let album_widget = album_widget
+                //.push(artwork_widget)
+                .push(widget::text(&album.title).size(16))
+                .push(widget::text(&album.artist).size(14));
+
+            current_column = current_column.push(album_widget);
+            column += 1;
+
+            if column == 3 {
+                current_row = current_row.push(widget::row().spacing(45).push(current_column));
+                println!("{}", row);
+                current_column = widget::column().spacing(20);
+                column = 0;
+                row += 1;
+                if row == 3 {
+                    println!("{}", row);
+                    grid = grid.push(widget::column().push(current_row).push(widget::text("2!")));
+                    current_row = widget::row().spacing(45);
+                    row = 0;
+                }
+            }
         }
-        column.into()
+
+        // Push any remaining albums
+        if column > 0 {
+            //grid = grid.push(current_row);
+        }
+
+        grid.into()
     }
 
     fn view_artists(&self) -> Element<Message> {

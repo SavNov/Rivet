@@ -1,7 +1,10 @@
 //use image::{DynamicImage, GenericImageView};
+use image::{DynamicImage, GenericImageView};
 use lofty::file::TaggedFileExt;
+use lofty::picture::PictureType;
 use lofty::prelude::*;
 use lofty::probe::Probe;
+use std::fs;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 /// Scan the music directory and find supported music files (mp3, flac, etc.).
@@ -53,10 +56,36 @@ pub fn extract_metadata(path: &Path) -> Option<(String, String, String)> {
 }
 
 /// Extract album artwork from the music file's metadata.
-// pub fn extract_artwork(path: &Path) -> Option<DynamicImage> {
-//     let tagged_file = Probe::open(path).ok()?.read().ok()?;
-//     let tag = tagged_file.primary_tag()?;
-// }
+pub fn extract_artwork(path: &Path) -> Option<DynamicImage> {
+    let tagged_file = Probe::open(path).ok()?.read().ok()?;
+
+    // Try primary tag first, then fall back to first available tag
+    let tag = match tagged_file.primary_tag() {
+        Some(tag) => tag,
+        None => tagged_file.first_tag()?,
+    };
+
+    // Get all pictures from the tag
+    let pictures = tag.pictures();
+
+    // Find the front cover image if possible, otherwise use the first picture
+    if let Some(picture) = pictures
+        .iter()
+        .find(|p| p.pic_type() == PictureType::CoverFront)
+        .or_else(|| pictures.first())
+    {
+        // Convert the picture data to a DynamicImage
+        return Some(image::load_from_memory(picture.data()).ok()?);
+    }
+    let cover_path = path.parent()?.join("cover.jpg");
+
+    match fs::read(cover_path) {
+        Ok(data) => Some(image::load_from_memory(&data).ok()?),
+        Err(_) => None,
+    }
+
+    // Convert the picture data to a DynamicImage
+}
 
 /// Convert a ReplayGain string to a floating-point multiplier.
 pub fn replaygain_to_multiplier(gain: &str) -> Option<f32> {
